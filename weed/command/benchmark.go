@@ -228,6 +228,22 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 	conn, _ := net.Dial("tcp", "localhost:28343")
 	defer conn.Close()
 
+	go func() {
+		bufReader := bufio.NewReader(conn)
+		for {
+			ret, _, err := bufReader.ReadLine()
+			if err != nil {
+				glog.V(0).Infof("upload by tcp: %v", err)
+				return
+			}
+			if !bytes.HasPrefix(ret, []byte("+OK")) {
+				glog.V(0).Infof("upload by tcp: %v", string(ret))
+			}
+		}
+	}()
+
+	bufWriter := bufio.NewWriter(conn)
+
 	for id := range idChan {
 		start := time.Now()
 		fileSize := int64(*b.fileSize + random.Intn(64))
@@ -248,7 +264,7 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			if !isSecure && assignResult.Auth != "" {
 				isSecure = true
 			}
-			if uploadByTcp(fp, conn, bufio.NewReader(conn)) {
+			if uploadByTcp(fp, bufWriter) {
 				s.completed++
 				s.transferred += fileSize
 			} else if _, err := fp.Upload(0, b.masterClient.GetMaster, false, assignResult.Auth, b.grpcDialOption); err == nil {
@@ -273,21 +289,18 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			println("writing file error:", err.Error())
 		}
 	}
+	bufWriter.Flush()
 	close(delayedDeleteChan)
 	waitForDeletions.Wait()
+	conn.Close()
 }
 
-func uploadByTcp(fp *operation.FilePart, conn net.Conn, bufInput *bufio.Reader) bool {
+func uploadByTcp(fp *operation.FilePart, conn io.Writer) bool {
 	fileId := []byte("+"+fp.Fid+"\n")
 	conn.Write(fileId)
 	util.Uint32toBytes(fileId[0:4], uint32(fp.FileSize))
 	conn.Write(fileId[0:4])
 	io.Copy(conn, fp.Reader)
-
-	ret, _, _ := bufInput.ReadLine()
-	if !bytes.HasPrefix(ret, []byte("+OK")) {
-		glog.V(0).Infof("upload by tcp: %v", string(ret))
-	}
 	return true
 }
 
