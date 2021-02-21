@@ -18,14 +18,14 @@ func (vs *VolumeServer) HandleTcpConnection(c net.Conn) {
 	bufReader := bufio.NewReaderSize(c, 4*1024*1024)
 
 	for {
-		cmd, err := bufReader.ReadByte()
+		cmd, err := bufReader.ReadString('\n')
 		if err != nil {
 			glog.Errorf("read command from %s: %v", c.RemoteAddr().String(), err)
 			return
 		}
-		switch cmd {
+		switch cmd[0] {
 		case '+':
-			err = vs.handleTcpPut(bufReader)
+			err = vs.handleTcpPut(cmd, bufReader)
 		case '-':
 			err = nil
 		}
@@ -39,11 +39,9 @@ func (vs *VolumeServer) HandleTcpConnection(c net.Conn) {
 
 }
 
-func (vs *VolumeServer) handleTcpPut(bufReader *bufio.Reader) error {
-	fileId, err := bufReader.ReadString('\n')
-	if err != nil {
-		return err
-	}
+func (vs *VolumeServer) handleTcpPut(cmd string, bufReader *bufio.Reader) (err error) {
+
+	fileId := cmd[1:]
 
 	commaIndex := strings.LastIndex(fileId, ",")
 	if commaIndex <= 0 {
