@@ -2,10 +2,12 @@ package command
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -223,6 +225,9 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 
 	random := rand.New(rand.NewSource(time.Now().UnixNano()))
 
+	conn, _ := net.Dial("tcp", "localhost:28343")
+	defer conn.Close()
+
 	for id := range idChan {
 		start := time.Now()
 		fileSize := int64(*b.fileSize + random.Intn(64))
@@ -243,7 +248,10 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			if !isSecure && assignResult.Auth != "" {
 				isSecure = true
 			}
-			if _, err := fp.Upload(0, b.masterClient.GetMaster, false, assignResult.Auth, b.grpcDialOption); err == nil {
+			if uploadByTcp(fp, conn, bufio.NewReader(conn)) {
+				s.completed++
+				s.transferred += fileSize
+			} else if _, err := fp.Upload(0, b.masterClient.GetMaster, false, assignResult.Auth, b.grpcDialOption); err == nil {
 				if random.Intn(100) < *b.deletePercentage {
 					s.total++
 					delayedDeleteChan <- &delayedFile{time.Now().Add(time.Second), fp}
@@ -267,6 +275,20 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 	}
 	close(delayedDeleteChan)
 	waitForDeletions.Wait()
+}
+
+func uploadByTcp(fp *operation.FilePart, conn net.Conn, bufInput *bufio.Reader) bool {
+	fileId := []byte("+"+fp.Fid+"\n")
+	conn.Write(fileId)
+	util.Uint32toBytes(fileId[0:4], uint32(fp.FileSize))
+	conn.Write(fileId[0:4])
+	io.Copy(conn, fp.Reader)
+
+	ret, _, _ := bufInput.ReadLine()
+	if !bytes.HasPrefix(ret, []byte("+OK")) {
+		glog.V(0).Infof("upload by tcp: %v", string(ret))
+	}
+	return true
 }
 
 func readFiles(fileIdLineChan chan string, s *stat) {

@@ -886,7 +886,7 @@ func (f *FlagSet) parseOne() (bool, error) {
 // The return value will be ErrHelp if -help or -h were set but not defined.
 func (f *FlagSet) Parse(arguments []string) error {
 	if _, ok := f.formal[DefaultConfigFlagName]; !ok {
-		f.String(DefaultConfigFlagName, "", "config file")
+		f.String(DefaultConfigFlagName, "", "config file for CLI, see https://github.com/chrislusf/seaweedfs/wiki/Use-Config-File-for-Command-Line-Options")
 	}
 
 	f.parsed = true
