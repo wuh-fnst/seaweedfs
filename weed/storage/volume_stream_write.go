@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/chrislusf/seaweedfs/weed/util"
 	"io"
@@ -59,5 +60,47 @@ func (v *Volume) StreamWrite(n *needle.Needle, data io.Reader, dataSize uint32) 
 	if err = v.nm.Put(n.Id, ToOffset(int64(offset)), n.Size); err != nil {
 		glog.V(4).Infof("failed to save in needle map %d: %v", n.Id, err)
 	}
+	return
+}
+
+func (v *Volume) StreamRead(n *needle.Needle, writer io.Writer) (err error) {
+
+	v.dataFileAccessLock.Lock()
+	defer v.dataFileAccessLock.Unlock()
+
+	nv, ok := v.nm.Get(n.Id)
+	if !ok || nv.Offset.IsZero() {
+		return ErrorNotFound
+	}
+
+	sr := &StreamReader{
+		readerAt: v.DataBackend,
+		offset: nv.Offset.ToActualOffset(),
+	}
+	bufReader := bufio.NewReader(sr)
+	bufReader.Discard(NeedleHeaderSize)
+	sizeBuf := make([]byte, 4)
+	bufReader.Read(sizeBuf)
+	if _, err = writer.Write(sizeBuf); err != nil {
+		return err
+	}
+	dataSize := util.BytesToUint32(sizeBuf)
+
+	_, err = io.Copy(writer, io.LimitReader(bufReader, int64(dataSize)))
+
+	return
+}
+
+type StreamReader struct {
+	offset   int64
+	readerAt io.ReaderAt
+}
+
+func (sr *StreamReader) Read(p []byte) (n int, err error) {
+	n, err = sr.readerAt.ReadAt(p, sr.offset)
+	if err != nil {
+		return
+	}
+	sr.offset += int64(n)
 	return
 }
