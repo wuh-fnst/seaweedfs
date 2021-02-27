@@ -3,8 +3,11 @@ package command
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
+	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
 	"io"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"net"
@@ -43,6 +46,8 @@ type BenchmarkOptions struct {
 	grpcDialOption   grpc.DialOption
 	masterClient     *wdclient.MasterClient
 	fsync            *bool
+	useTcp            *bool
+	useGrpc            *bool
 }
 
 var (
@@ -69,6 +74,8 @@ func init() {
 	b.cpuprofile = cmdBenchmark.Flag.String("cpuprofile", "", "cpu profile output file")
 	b.maxCpu = cmdBenchmark.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
 	b.fsync = cmdBenchmark.Flag.Bool("fsync", false, "flush data to disk after write")
+	b.useTcp = cmdBenchmark.Flag.Bool("useTcp", false, "send data via tcp")
+	b.useGrpc = cmdBenchmark.Flag.Bool("useGrpc", false, "send data via grpc")
 	sharedBytes = make([]byte, 1024)
 }
 
@@ -264,7 +271,10 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			if !isSecure && assignResult.Auth != "" {
 				isSecure = true
 			}
-			if uploadByTcp(fp, bufWriter) {
+			if *b.useGrpc && uploadByGrpc(fp, "localhost:8343") {
+				s.completed++
+				s.transferred += fileSize
+			} else if *b.useTcp && uploadByTcp(fp, bufWriter) {
 				s.completed++
 				s.transferred += fileSize
 			} else if _, err := fp.Upload(0, b.masterClient.GetMaster, false, assignResult.Auth, b.grpcDialOption); err == nil {
@@ -293,6 +303,24 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 	close(delayedDeleteChan)
 	waitForDeletions.Wait()
 	conn.Close()
+}
+
+func uploadByGrpc(fp *operation.FilePart, volumeServerAddress string) bool {
+	data, err := ioutil.ReadAll(fp.Reader)
+	if err != nil {
+		return false
+	}
+	err = operation.WithVolumeServerClient(volumeServerAddress, nil, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
+		_, err = volumeServerClient.VolumeNeedleWrite(context.Background(), &volume_server_pb.VolumeNeedleWriteRequest{
+			FileId: fp.Fid,
+			Data:   data,
+		})
+		return err
+	})
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func uploadByTcp(fp *operation.FilePart, conn io.Writer) bool {
