@@ -1,19 +1,28 @@
 package weed_server
 
 import (
-	"context"
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/chrislusf/seaweedfs/weed/storage/needle"
 )
 
-func (vs *VolumeServer) VolumeNeedleWrite(ctx context.Context, req *volume_server_pb.VolumeNeedleWriteRequest) (*volume_server_pb.VolumeNeedleWriteResponse, error) {
+func (vs *VolumeServer) VolumeNeedleWrite(stream volume_server_pb.VolumeServer_VolumeNeedleWriteServer) error {
 
-	if err := vs.handlePut(req); err != nil {
-		glog.Errorf("handle put %s: %v", req.FileId, err)
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			glog.V(2).Infof("recv write: %v", err)
+			break
+		}
+
+		if err := vs.handlePut(req); err != nil {
+			glog.Errorf("handle put %s: %v", req.FileId, err)
+			break
+		}
+
 	}
 
-	return &volume_server_pb.VolumeNeedleWriteResponse{}, nil
+	return nil
 }
 
 func (vs *VolumeServer) handlePut(req *volume_server_pb.VolumeNeedleWriteRequest) (err error) {
@@ -28,6 +37,6 @@ func (vs *VolumeServer) handlePut(req *volume_server_pb.VolumeNeedleWriteRequest
 
 	_, err = vs.store.WriteVolumeNeedle(volumeId, n, false)
 
-	return err
+	return nil
 
 }

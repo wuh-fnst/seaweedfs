@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/volume_server_pb"
 	"io"
 	"io/ioutil"
@@ -251,6 +252,26 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 
 	bufWriter := bufio.NewWriter(conn)
 
+	grpcConection, err := pb.GrpcDial(context.Background(), "localhost:18343", grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("fail to dial %s : %v\n", "localhost:8343", err)
+		return
+	}
+	defer grpcConection.Close()
+
+	volumeClient := volume_server_pb.NewVolumeServerClient(grpcConection)
+
+	needleWriteClient, err := volumeClient.VolumeNeedleWrite(context.Background())
+	if err != nil {
+		fmt.Printf("VolumeNeedleWrite error:%v\n", err)
+	} else {
+		go func() {
+			for {
+				needleWriteClient.Recv()
+			}
+		}()
+	}
+
 	for id := range idChan {
 		start := time.Now()
 		fileSize := int64(*b.fileSize + random.Intn(64))
@@ -271,7 +292,7 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			if !isSecure && assignResult.Auth != "" {
 				isSecure = true
 			}
-			if *b.useGrpc && uploadByGrpc(fp, "localhost:8343") {
+			if *b.useGrpc && uploadByGrpc(fp, needleWriteClient) {
 				s.completed++
 				s.transferred += fileSize
 			} else if *b.useTcp && uploadByTcp(fp, bufWriter) {
@@ -299,24 +320,23 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 			println("writing file error:", err.Error())
 		}
 	}
+
 	bufWriter.Flush()
 	close(delayedDeleteChan)
 	waitForDeletions.Wait()
 	conn.Close()
 }
 
-func uploadByGrpc(fp *operation.FilePart, volumeServerAddress string) bool {
+func uploadByGrpc(fp *operation.FilePart, client volume_server_pb.VolumeServer_VolumeNeedleWriteClient) bool {
 	data, err := ioutil.ReadAll(fp.Reader)
 	if err != nil {
 		return false
 	}
-	err = operation.WithVolumeServerClient(volumeServerAddress, nil, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-		_, err = volumeServerClient.VolumeNeedleWrite(context.Background(), &volume_server_pb.VolumeNeedleWriteRequest{
-			FileId: fp.Fid,
-			Data:   data,
-		})
-		return err
+	err = client.Send(&volume_server_pb.VolumeNeedleWriteRequest{
+		FileId: fp.Fid,
+		Data:   data,
 	})
+
 	if err != nil {
 		return false
 	}

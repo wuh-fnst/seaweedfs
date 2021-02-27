@@ -92,7 +92,7 @@ service VolumeServer {
     rpc Query (QueryRequest) returns (stream QueriedStripe) {
     }
 
-    rpc VolumeNeedleWrite (VolumeNeedleWriteRequest) returns (VolumeNeedleWriteResponse) {
+    rpc VolumeNeedleWrite (stream VolumeNeedleWriteRequest) returns (stream VolumeNeedleWriteResponse) {
     }
     rpc VolumeNeedleStatus (VolumeNeedleStatusRequest) returns (VolumeNeedleStatusResponse) {
     }

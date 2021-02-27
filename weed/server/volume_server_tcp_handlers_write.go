@@ -26,21 +26,24 @@ func (vs *VolumeServer) HandleTcpConnection(c net.Conn) {
 		}
 		switch cmd[0] {
 		case '+':
-			err = vs.handleTcpPut(cmd, bufReader)
+			fileId := cmd[1:]
+			err = vs.handleTcpPut(fileId, bufReader)
 			if err == nil {
 				bufWriter.Write([]byte("+OK\n"))
 			} else {
 				bufWriter.Write([]byte("-ERR " + string(err.Error()) + "\n"))
 			}
 		case '-':
-			err = vs.handleTcpDelete(cmd)
+			fileId := cmd[1:]
+			err = vs.handleTcpDelete(fileId)
 			if err == nil {
 				bufWriter.Write([]byte("+OK\n"))
 			} else {
 				bufWriter.Write([]byte("-ERR " + string(err.Error()) + "\n"))
 			}
 		case '?':
-			err = vs.handleTcpGet(cmd, bufWriter)
+			fileId := cmd[1:]
+			err = vs.handleTcpGet(fileId, bufWriter)
 		case '!':
 			bufWriter.Flush()
 		}
@@ -49,9 +52,9 @@ func (vs *VolumeServer) HandleTcpConnection(c net.Conn) {
 
 }
 
-func (vs *VolumeServer) handleTcpGet(cmd string, writer *bufio.Writer) (err error) {
+func (vs *VolumeServer) handleTcpGet(fileId string, writer *bufio.Writer) (err error) {
 
-	volumeId, n, err2 := vs.parseFileId(cmd)
+	volumeId, n, err2 := vs.parseFileId(fileId)
 	if err2 != nil {
 		return err2
 	}
@@ -69,9 +72,9 @@ func (vs *VolumeServer) handleTcpGet(cmd string, writer *bufio.Writer) (err erro
 	return nil
 }
 
-func (vs *VolumeServer) handleTcpPut(cmd string, bufReader *bufio.Reader) (err error) {
+func (vs *VolumeServer) handleTcpPut(fileId string, bufReader *bufio.Reader) (err error) {
 
-	volumeId, n, err2 := vs.parseFileId(cmd)
+	volumeId, n, err2 := vs.parseFileId(fileId)
 	if err2 != nil {
 		return err2
 	}
@@ -95,9 +98,9 @@ func (vs *VolumeServer) handleTcpPut(cmd string, bufReader *bufio.Reader) (err e
 	return nil
 }
 
-func (vs *VolumeServer) handleTcpDelete(cmd string) (err error) {
+func (vs *VolumeServer) handleTcpDelete(fileId string) (err error) {
 
-	volumeId, n, err2 := vs.parseFileId(cmd)
+	volumeId, n, err2 := vs.parseFileId(fileId)
 	if err2 != nil {
 		return err2
 	}
@@ -110,8 +113,7 @@ func (vs *VolumeServer) handleTcpDelete(cmd string) (err error) {
 	return nil
 }
 
-func (vs *VolumeServer) parseFileId(cmd string) (needle.VolumeId, *needle.Needle, error) {
-	fileId := cmd[1:]
+func (vs *VolumeServer) parseFileId(fileId string) (needle.VolumeId, *needle.Needle, error) {
 
 	commaIndex := strings.LastIndex(fileId, ",")
 	if commaIndex <= 0 {
